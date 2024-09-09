@@ -39,11 +39,29 @@ gdf_nodes, gdf_edges = ox.graph_to_gdfs(Gc, nodes=True, edges=True)
 # Create an interactive map using GeoPandas' explore
 # Use a built-in tile layer that does not require additional attribution
 m = gdf_edges.explore(color='grey', tooltip=True, legend=True, tiles="OpenStreetMap")
-gdf_nodes.explore(ax=m, color='blue', tooltip=True, legend=True)
-emergency_care_gdf_proj.explore(ax=m, color='red', marker_kwds={'radius': 100})
+
+# Add nodes to the map with larger markers and a different color
+gdf_nodes.explore(
+    m=m,
+    color='blue',
+    marker_kwds={'radius': 3, 'fill': True, 'fillOpacity': 0.9},
+    tooltip=True,
+    legend=True
+)
+
+# Add hospitals to the map with larger, distinct markers
+emergency_care_gdf_proj.explore(
+    m=m,
+    color='red',
+    marker_kwds={'radius': 20, 'fill': True, 'fillOpacity': 0.9},
+    tooltip=True,
+    legend=True
+)
 
 # Save the interactive map to an HTML file
-m.save("interactive_map.html")
+m.save("interactive_map2.html")
+
+
 
 
 
