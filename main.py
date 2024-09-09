@@ -1,5 +1,6 @@
 import osmnx as ox
 import geopandas as gpd
+import folium
 import matplotlib.pyplot as plt
 
 # Define place and tags for emergency care
@@ -7,59 +8,89 @@ place = "Groningen, The Netherlands"
 tags = {'amenity': 'hospital'}
 
 # Fetch and project the street network
+print("Fetching the street network...")
 G = ox.graph_from_place(place, network_type="drive")
+print("Projecting the graph...")
 G_proj = ox.project_graph(G)  # Project the graph to an appropriate CRS
 
 # Fetch emergency care locations
+print("Fetching emergency care locations...")
 emergency_care_gdf = ox.features_from_place(place, tags)
 
-# Ensure the emergency care GeoDataFrame is in EPSG:4326
-if emergency_care_gdf.crs is None:
-    emergency_care_gdf.crs = 'EPSG:4326'
+# Ensure the emergency care GeoDataFrame has the correct CRS
+print("Ensuring CRS for emergency care GeoDataFrame...")
+emergency_care_gdf = gpd.GeoDataFrame(emergency_care_gdf, crs="EPSG:4326")
+
+# Convert the network graph to GeoDataFrames
+print("Converting network graph to GeoDataFrames...")
+nodes, edges = ox.graph_to_gdfs(G_proj, nodes=True, edges=True)
+
+# Check and set CRS for nodes and edges
+print("Checking and setting CRS for nodes and edges GeoDataFrames...")
+if nodes.crs is None:
+    print("Nodes GeoDataFrame has no CRS. Setting CRS to EPSG:4326...")
+    nodes.set_crs(epsg=4326, allow_override=True, inplace=True)
 else:
-    emergency_care_gdf = emergency_care_gdf.to_crs('EPSG:4326')
+    print(f"Nodes CRS: {nodes.crs}")
+    print("Reprojecting nodes GeoDataFrame to EPSG:4326...")
+    nodes = nodes.to_crs(epsg=4326)
 
-# Reproject emergency care locations to match the graph's CRS
-emergency_care_gdf_proj = emergency_care_gdf.to_crs(G_proj.graph['crs'])
+if edges.crs is None:
+    print("Edges GeoDataFrame has no CRS. Setting CRS to EPSG:4326...")
+    edges.set_crs(epsg=4326, allow_override=True, inplace=True)
+else:
+    print(f"Edges CRS: {edges.crs}")
+    print("Reprojecting edges GeoDataFrame to EPSG:4326...")
+    edges = edges.to_crs(epsg=4326)
 
-# Convert polygons to points by taking the centroid of each polygon
-emergency_care_gdf_proj['geometry'] = emergency_care_gdf_proj.geometry.centroid
+# Create a Folium map centered on Groningen
+print("Creating Folium map...")
+m = folium.Map(location=[53.2194, 6.5665], zoom_start=13)
 
-# Consolidate intersections
-Gc = ox.consolidate_intersections(G_proj, dead_ends=True)
+# Add nodes to the map
+print("Adding nodes to the map...")
+for idx, row in nodes.iterrows():
+    folium.Marker([row.geometry.y, row.geometry.x],
+                   popup=f"Node {row.name}",
+                   icon=folium.Icon(color='blue', icon='info-sign')).add_to(m)
 
-# Find the closest nodes in the graph for each emergency care location (now points)
-closest_nodes = emergency_care_gdf_proj.geometry.apply(
-    lambda point: ox.nearest_nodes(Gc, point.x, point.y)
-)
+# Add edges to the map
+print("Adding edges to the map...")
+for idx, row in edges.iterrows():
+    coords = list(row.geometry.coords)
+    folium.PolyLine(coords, color="gray", weight=2.5, opacity=0.6).add_to(m)
 
-# Convert the graph to GeoDataFrames for exploration
-gdf_nodes, gdf_edges = ox.graph_to_gdfs(Gc, nodes=True, edges=True)
+# Add emergency care locations to the map
+print("Adding emergency care locations to the map...")
+for idx, row in emergency_care_gdf.iterrows():
+    if row.geometry.geom_type == 'Point':
+        folium.Marker([row.geometry.y, row.geometry.x],
+                      popup=f"Hospital: {row['name']}",
+                      icon=folium.Icon(color='red', icon='plus')).add_to(m)
+    elif row.geometry.geom_type == 'Polygon':
+        # Use the centroid of the polygon for display
+        centroid = row.geometry.centroid
+        folium.Marker([centroid.y, centroid.x],
+                      popup=f"Hospital: {row['name']}",
+                      icon=folium.Icon(color='red', icon='plus')).add_to(m)
+    else:
+        print(f"Unsupported geometry type: {row.geometry.geom_type}")
 
-# Create an interactive map using GeoPandas' explore
-# Use a built-in tile layer that does not require additional attribution
-m = gdf_edges.explore(color='grey', tooltip=True, legend=True, tiles="OpenStreetMap")
+# Save the map to an HTML file
+print("Saving the map to an HTML file...")
+m.save("groningen_map.html")
+print("Map saved as groningen_map.html")
 
-# Add nodes to the map with larger markers and a different color
-gdf_nodes.explore(
-    m=m,
-    color='blue',
-    marker_kwds={'radius': 3, 'fill': True, 'fillOpacity': 0.9},
-    tooltip=True,
-    legend=True
-)
+# Optional: Display the map with matplotlib (not interactive)
+print("Displaying the map with matplotlib...")
+fig, ax = plt.subplots(figsize=(10, 10))
+edges.plot(ax=ax, linewidth=1, edgecolor='gray')
+nodes.plot(ax=ax, markersize=5, color='blue', label='Nodes')
+emergency_care_gdf.plot(ax=ax, markersize=20, color='red', label='Hospitals')
+plt.show()
 
-# Add hospitals to the map with larger, distinct markers
-emergency_care_gdf_proj.explore(
-    m=m,
-    color='red',
-    marker_kwds={'radius': 20, 'fill': True, 'fillOpacity': 0.9},
-    tooltip=True,
-    legend=True
-)
 
-# Save the interactive map to an HTML file
-m.save("interactive_map2.html")
+
 
 
 
