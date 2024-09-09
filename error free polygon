@@ -1,0 +1,63 @@
+import osmnx as ox
+import geopandas as gpd
+import folium
+from shapely.geometry import Point
+from osmnx import distance
+
+# Define place and tags for emergency care
+place = "Groningen, The Netherlands"
+tags = {'amenity': 'hospital'}
+
+# Fetch and project the street network
+G = ox.graph_from_place(place, network_type="drive")
+G_proj = ox.project_graph(G)  # Project the graph to an appropriate CRS
+
+# Fetch emergency care locations
+emergency_care_gdf = ox.features_from_place(place, tags)
+
+# Check CRS of the graph
+crs = G_proj.graph['crs']
+print(f"Graph CRS: {crs}")
+
+# Reproject hospitals to match the graph's CRS before calculating centroids
+emergency_care_gdf_proj = emergency_care_gdf.to_crs(crs)
+print(emergency_care_gdf_proj.head())  # Check hospital data after reprojecting
+
+# Convert hospitals to centroids (for polygons)
+emergency_care_gdf_proj['geometry'] = emergency_care_gdf_proj.geometry.centroid
+
+# Find the nearest nodes for each hospital and convert to list
+hospital_nodes = emergency_care_gdf_proj.geometry.apply(
+    lambda point: ox.distance.nearest_nodes(G_proj, point.x, point.y)
+).tolist()
+
+print(f"Hospital nodes: {hospital_nodes}")  # Print hospital nodes to check data
+
+# Create interactive map
+m = folium.Map(location=[53.2194, 6.5665], zoom_start=13)
+
+# Add hospital locations to the map
+for idx, row in emergency_care_gdf_proj.iterrows():
+    folium.Marker(
+        location=[row.geometry.y, row.geometry.x],
+        icon=folium.Icon(color='red', icon='info-sign'),
+        popup=f"Hospital {idx}"
+    ).add_to(m)
+    print(f"Added hospital at {row.geometry.y}, {row.geometry.x}")  # Debugging
+
+# Add nodes to the map with click functionality
+for node, data in G_proj.nodes(data=True):
+    folium.CircleMarker(
+        location=[data['y'], data['x']],
+        radius=5,
+        color='blue',
+        fill=True,
+        fill_color='blue',
+        fill_opacity=0.6,
+        popup="Node"
+    ).add_to(m)
+    print(f"Added node at {data['y']}, {data['x']}")  # Debugging
+
+# Save map to HTML file
+m.save("interactive_map_with_distance.html")
+print("Map saved to interactive_map_with_distance.html")
