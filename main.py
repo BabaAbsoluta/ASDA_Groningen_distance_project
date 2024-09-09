@@ -1,4 +1,5 @@
 import osmnx as ox
+import geopandas as gpd
 import matplotlib.pyplot as plt
 
 # Define place and tags for emergency care
@@ -19,28 +20,30 @@ else:
     emergency_care_gdf = emergency_care_gdf.to_crs('EPSG:4326')
 
 # Reproject emergency care locations to match the graph's CRS
-emergency_care_gdf_proj = emergency_care_gdf.to_crs(ox.project_graph(G).graph['crs'])
+emergency_care_gdf_proj = emergency_care_gdf.to_crs(G_proj.graph['crs'])
+
+# Convert polygons to points by taking the centroid of each polygon
+emergency_care_gdf_proj['geometry'] = emergency_care_gdf_proj.geometry.centroid
 
 # Consolidate intersections
 Gc = ox.consolidate_intersections(G_proj, dead_ends=True)
 
-# Plot the graph
-fig, ax = ox.plot_graph(
-    Gc,
-    figsize=(10, 10),
-    edge_linewidth=1,
-    edge_color="c",
-    node_size=5,
-    node_color="#222222",
-    node_edgecolor="c",
-    show=False,
-    close=False
+# Find the closest nodes in the graph for each emergency care location (now points)
+closest_nodes = emergency_care_gdf_proj.geometry.apply(
+    lambda point: ox.nearest_nodes(Gc, point.x, point.y)
 )
 
-# Plot the emergency care locations with enhanced visibility
-emergency_care_gdf_proj.plot(ax=ax, color='red', marker='o', markersize=50, label='Emergency Care')
+# Convert the graph to GeoDataFrames for exploration
+gdf_nodes, gdf_edges = ox.graph_to_gdfs(Gc, nodes=True, edges=True)
 
-# Add legend and show plot
-plt.legend()
-plt.show()
+# Create an interactive map using GeoPandas' explore
+# Use a built-in tile layer that does not require additional attribution
+m = gdf_edges.explore(color='grey', tooltip=True, legend=True, tiles="OpenStreetMap")
+gdf_nodes.explore(ax=m, color='blue', tooltip=True, legend=True)
+emergency_care_gdf_proj.explore(ax=m, color='red', marker_kwds={'radius': 100})
+
+# Save the interactive map to an HTML file
+m.save("interactive_map.html")
+
+
 
